@@ -14,29 +14,26 @@ exact manual steps below.
 | 3 | 2026-08-27 | M0/M1 capture harness: `replay_capture` proves capture → convert → profile end to end on real data; `ToraCapture` scaffolded (SDK-conditional) | Replay capture dumps 30,598 normalized events and round-trips bit-faithfully |
 | 4 | 2026-08-27 | n-sight.com.cn probed from this box: reachable (HTTP 200, JSESSIONID) but the SPA login endpoint is not curl-friendly (element-ui SPA; RSA/captcha risk) | SDK download must be done manually in a browser — steps below |
 
-## SDK acquisition (manual, one-time)
+## SDK (acquired — DONE 2026-08-27, no browser needed)
 
-The openctp TORA wrapper pins the official SDK versions:
-`API_C++_行情_v1.0.8_20241220` and `API_C++_交易_v4.1.3_20250415`.
+The tora-rs build docs host the official packages at `ctp-api.ruiqilei.com`;
+both are downloaded into `alignment_ob/sdk/` (gitignored):
 
-1. In a browser: https://n-sight.com.cn → log in with the 00974579 account
-   (N视界 platform login — the SPA; if it asks for a phone number, use the
-   one registered to the account).
-2. 下载中心 → download the two SDK packages above.
-3. Unzip into `alignment_ob/sdk/` (gitignored).
-4. **Check the 行情 SDK for the L2 逐笔 module**: `lev2md` dir / `TORALEV2API`
-   headers — `Lev2MdApi`, `OnRtnLev2OrderDetail`, `OnRtnLev2Transaction`,
-   `OnRtnLev2MarketData`. C++ headers → small shim (or the Rust `tora-rs`
-   crate); a Python `lev2` module → wire `ToraCapture` directly.
-5. Fill `alignment_ob/secrets.yaml` (copy of `secrets.example.yaml` —
-   gitignored) with user/password/appid/authcode.
-6. Run on a China-reachable host (the fronts `tcp://210.14.72.*` are not
-   reachable from this GCP box):
-   ```bash
-   python -c "from alignment_ob.capture import ToraCapture; ..."
-   ```
-   → M0 raw dumps land in `captures/{date}/raw/{sid}.jsonl` first; normalize
-   only after eyeballing the raw fields (M1).
+- `API_Stock_lv2_C++ v4.0.8_20251126.zip` → `C++_API_v4.0.8_20251126/`:
+  `TORATstpLev2MdApi.h`, `TORATstpLev2ApiStruct.h`, `TORATstpLev2ApiDataType.h`,
+  Linux `liblev2mdapi.so`, Windows dll/lib. **The L2 逐笔 module is C++** —
+  hence the C++ capture tool `cpp/lev2_dump.cpp` (built, `sdk/bin/lev2_dump`).
+- `API_Stock_C++_td v4.1.8_20260422.zip` → `traderapi.zip` (execution side, M5).
+
+Login form: `ReqUserLoginField` — `LogInAccount` (00974579), `LogInAccountType`
+('0' UserID / '1' 资金账号), `Password`, `AuthMode='0'`; **`DepartmentID` is
+required when logging in as 资金账号** (unknown value — try UserID first).
+
+**The fronts are reachable from this GCP box** — `OnFrontConnected` fires on
+both `tcp://210.14.72.16:9402` (7x24) and `tcp://210.14.72.21:4402` (仿真).
+First live run blocked on: pre-market hours (06:15 Beijing) and/or login
+rejection. `alignment_ob/scripts/capture_live.sh` runs the capture; the first
+market-open capture is scheduled for 09:15 Beijing.
 
 ## Offline loop (works today, no SDK)
 
@@ -68,3 +65,35 @@ M1 mapping until 100.0% → then bars via `scripts/gate_stream_vs_batch.py`.
 - [ ] `exch_ts` vs `local_ts` (feed has exchange timestamps; tick_table keeps both)
 - [ ] cancel attribution: OrdType -1 (place) cross-checked against event 2 count
 - [ ] BuyOrderID/SellOrderID attribution (event stream has one order_id per row)
+
+## 2026-08-27 night — SDK acquired + capture tool built + M1 normalizer
+
+| # | What | Result |
+|---|------|--------|
+| 5 | **SDK acquired programmatically** — tora-rs build docs host direct URLs at `ctp-api.ruiqilei.com`: `API_Stock_lv2_C++ v4.0.8_20251126.zip` (TORALEV2API) + `API_Stock_C++_td v4.1.8_20260422.zip` — downloaded to `alignment_ob/sdk/` (gitignored) | C++ headers + Linux `liblev2mdapi.so` + Win dlls |
+| 6 | Headers read (GBK→UTF-8): `CTORATstpLev2MdApi` (Create/Init/RegisterFront/SubscribeMarketData/Transaction/OrderDetail/Resend*), SPI callbacks, all three field structs, types/enums (`'B'/'S'` aggressor, `'A'/'D'` add/delete, `'1'/'2'` SSE/SZSE, int HHMMSSmmm timestamps, yuan prices, login `LogInAccountType '0'/'1'` + `DepartmentID` 必填 for 资金账号) | M1 mapping grounded on the official headers, not guesses |
+| 7 | **`cpp/lev2_dump.cpp` built and linked** against `liblev2mdapi.so` (g++ on this box) — M0 raw capture tool, JSONL per callback, all book fields via named accessors | Builds clean; `GetApiVersion()` works offline; **the fronts CONNECT from this GCP box** (`tcp://210.14.72.16:9402` 7x24 and `tcp://210.14.72.21:4402` 仿真 both fire `OnFrontConnected`) |
+| 8 | First live attempts (acct_type 0/1, both fronts, 06:15 Beijing): front connects, subscribes, **no login response / no data** — pre-market or login-rejection (DepartmentID missing for 资金账号 login) | Scheduled capture at 09:15 Beijing to distinguish |
+| 9 | `normalize.py` — M1 normalizer: md→book state, tr→event 1/4/2 (stat/ExecType), od→event 0/2, resend dedupe in the same seq space, book stamped on every event, `level_placed` derived, SZ sign from mid | 11 tests green |
+
+## Live capture (works from this box — the fronts are reachable)
+
+```bash
+# M0: dump 2 hours of raw L2 (open auction + morning session)
+alignment_ob/scripts/capture_live.sh 7200 tcp://210.14.72.16:9402 0 600000,000001 1
+# → alignment_ob/captures/{date}/raw/capture_tcp210.14.72.169402.jsonl
+
+# M1: normalize → events → tick_table
+.venv-live/bin/python - << 'PYEOF'
+from alignment_ob.normalize import normalize_capture
+from alignment_ob.converters import events_to_tick_table
+import glob
+path = sorted(glob.glob("alignment_ob/captures/*/raw/capture_*.jsonl"))[-1]
+day = int(path.split("/")[2])
+events = normalize_capture(path, day)
+t = events_to_tick_table(events, sid=2_600_000)
+print(f"{len(events)} events → {len(t)} tick_table rows")
+PYEOF
+
+# M3: profile against the research tape (same date), then bars via the gate
+```

@@ -130,3 +130,19 @@ This is the design doc's own pre-flagged "fidelity risk" realized: the streaming
 ### Numbers
 
 - Full suite with alignment_ob: 39 tests (33 + 6), all green; ruff clean.
+
+## 2026-08-27 (22:30) — SDK in hand, capture tool built, fronts reachable, M1 normalizer done
+
+### SDK acquired programmatically (no browser needed)
+
+- tora-rs build docs host the official packages: `API_Stock_lv2_C++ v4.0.8_20251126.zip` (TORALEV2API) + `API_Stock_C++_td v4.1.8_20260422.zip` at ctp-api.ruiqilei.com → `alignment_ob/sdk/` (gitignored). Headers (GBK→UTF-8) give the FULL ground truth: `CTORATstpLev2MdApi` (Create/Init/RegisterFront/DeclareMKSubTypes/Subscribe{MarketData,Transaction,OrderDetail,Resend*}/ReqUserLogin), SPI callbacks, field structs, types/enums — timestamps int HHMMSSmmm, prices double yuan, `'B'/'S'` TradeBSFlag, `'A'/'D'` OrderStatus, `'1'/'2'` SSE/SZSE, login `LogInAccountType '0'/'1'` + DepartmentID 必填 for 资金账号.
+- **`alignment_ob/cpp/lev2_dump.cpp`** — M0 capture tool (JSONL per callback, named accessors for the non-contiguous book fields). Compiled + linked against liblev2mdapi.so ON THIS BOX; GetApiVersion works; **both fronts CONNECT from this GCP box** (9402 7x24 + 4402 仿真) — the China-host constraint does not apply to the TORA fronts.
+- First live attempt 06:15 Beijing: connected + subscribed, no login response / no data (pre-market or 资金账号-login rejection). Capture scheduled for 09:15 Beijing (01:20 UTC, one-shot durable cron).
+- `alignment_ob/scripts/capture_live.sh` — repeatable capture: timeout + front + acct_type + sids, secrets from secrets.yaml, raw JSONL → captures/{date}/raw/.
+
+### M1 normalizer (`alignment_ob/normalize.py`) — 11 tests
+
+- md → BookState (10 levels, cents, order counts, cum volume, MDSecurityStat); tr → event 1 (continuous) / 4 (auction stat '1'/'b') / 2 (SZ ExecType 撤销); od → event 0 ('A') / 2 ('D'); TradeBSFlag→sign (SZ derives from mid); resend dedupe in the SAME seq space as live; every event stamped with the current book (has_book=True) so the M2 converter reproduces research rows; level_placed derived from order price vs book.
+- Bugs the tests caught: resend keys must share the live seq space; unknown line types must not touch SecurityID; HHMMSSmmm left-padding for pre-10:00 hours.
+
+### Suite: 50 passed, ruff clean. Committed (not pushed).
