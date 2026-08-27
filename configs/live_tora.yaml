@@ -1,0 +1,43 @@
+# Live: TORA (华鑫奇点) native L2 — tick on quote AND trade (逐笔委托/逐笔成交).
+# Run on a China-reachable host after obtaining the 奇点 SDK + n-sight account:
+#   .venv-live/bin/python -m live.run --config configs/live_tora.yaml
+source:
+  mode: tora
+  front: tcp://210.14.72.16:9402   # 7x24 行情前置; 仿真: tcp://210.14.72.21:4402
+  env: sim
+  account:
+    user: ""
+    password: ""
+
+instruments:
+  - sh600000
+  - sz000858
+
+bars:
+  freq_min: 3
+  emit_empty_windows: true
+
+graph:
+  path: /home/george/code/alfa/cn/yaml/spd/cqr/v260823/cqr_bar.yaml
+  min_samples: 0
+
+signal:
+  module: live.signal
+  function: compute_signal
+
+sinks:
+  jsonl:
+    enabled: true
+    path: bars/live_tora.jsonl
+    dedupe: true
+  parquet:
+    enabled: false
+    dir: bars/parquet
+    freq: 3m
+    overwrite: false
+  kafka:
+    enabled: false
+    brokers: localhost:9092
+    topic: cn.bars.3m.live
+    key_by: sid
+    producer_config: {}

@@ -1,0 +1,7 @@
+# Live service deps (Python 3.13, .venv-live) — see pyproject.toml note.
+# obgx = the research graph evaluator (AstGraph.load_flat / run).
+obgx @ git+https://github.com/GXIU/obgx@main
+pyarrow>=14
+pyyaml>=6
+pytest>=8
+ruff>=0.16.3

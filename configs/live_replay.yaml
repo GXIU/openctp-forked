@@ -1,0 +1,42 @@
+# Offline replay: research tick_table parquet through the live pipeline.
+# Dev-box default — run with:
+#   .venv-live/bin/python -m live.run --config configs/live_replay.yaml
+source:
+  mode: replay
+  replay:
+    dir: /home/george/code/alfa/cn/tick-table
+    dates: [20220104]
+    fmt: parquet
+
+instruments:
+  - sh603019
+  - sh600000
+
+bars:
+  freq_min: 3
+  emit_empty_windows: true
+
+graph:
+  path: /home/george/code/alfa/cn/yaml/spd/cqr/v260823/cqr_bar.yaml
+  min_samples: 0
+
+signal:
+  module: live.signal
+  function: compute_signal
+
+sinks:
+  jsonl:
+    enabled: true
+    path: bars/live_replay.jsonl
+    dedupe: true
+  parquet:
+    enabled: true
+    dir: bars/parquet
+    freq: 3m
+    overwrite: false
+  kafka:
+    enabled: false
+    brokers: localhost:9092
+    topic: cn.bars.3m.live
+    key_by: sid
+    producer_config: {}

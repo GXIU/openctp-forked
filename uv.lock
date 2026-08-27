@@ -1,0 +1,24 @@
+version = 1
+revision = 3
+requires-python = "==3.12.*"
+
+[[package]]
+name = "openctp-ctp"
+version = "6.3.15.7"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/43/24/dd1f90d7dffab90bacc523ee4dbdd3a9129b920b09a6591fd109b7bc91cb/openctp_ctp-6.3.15.7-cp312-cp312-win32.whl", hash = "sha256:a2fcc102266f63ff71e7c349c8b3f7440822ce99e0e5915654e98a1e0cafa113", size = 4723459, upload-time = "2025-08-21T15:15:54.729Z" },
+    { url = "https://files.pythonhosted.org/packages/06/4c/480103b91d13ec12b35c04405e4550c11312e60f0aeb3f5a198ae8287d8c/openctp_ctp-6.3.15.7-cp312-cp312-win_amd64.whl", hash = "sha256:575cad0c5cd6b1eef11da14738bbaa7c868dc2ca4057e8c12cdca84edb292c77", size = 6578983, upload-time = "2025-08-21T15:16:58.012Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/7d/5aa966364d5d5d4fb9e0bdf69c2bb619b6d5bd707558daa640faa0225246/openctp_ctp-6.3.15.7-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:922ff772982ef16c6b79db0e39b721790e50ab2ea9a72cdca72eaae8938e750f", size = 7868394, upload-time = "2025-08-21T14:17:49.176Z" },
+]
+
+[[package]]
+name = "openctp-forked"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "openctp-ctp" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "openctp-ctp", specifier = "==6.3.15.*" }]

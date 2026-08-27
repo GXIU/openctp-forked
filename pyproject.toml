@@ -1,0 +1,31 @@
+[project]
+name = "openctp-forked"
+version = "0.1.0"
+description = "openctp fork: CTPAPI-compatible execution layer for CN markets (broker adapters + SWIG Python bindings + live tick-to-signal service)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "openctp-ctp==6.3.15.*",
+]
+
+# NOTE: the live/ service (tick→bar graph features→signal) needs obgx, which
+# requires Python >=3.13 — while openctp-ctp's SWIG wheel segfaults on 3.13
+# (verified). They cannot share a venv. The live service runs from the repo's
+# second venv `.venv-live` (Python 3.13, deps in live-requirements.txt):
+#   uv venv .venv-live --python 3.13
+#   uv pip install --python .venv-live/bin/python -r live-requirements.txt
+#   .venv-live/bin/python -m live.run --config configs/live_replay.yaml
+# This venv (`.venv`, 3.12) remains for the openctp-ctp bindings only.
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.16.3",
+]
+
+[tool.ruff]
+line-length = 100
+
+# The binding wheels (SWIG-generated) segfault under CPython 3.13 — pin 3.12.
+[tool.uv.workspace]
+# Opt out of the parent /home/george/code workspace, which requires >=3.13.
+exclude = ["."]

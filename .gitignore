@@ -33,3 +33,16 @@ soptthostmduserapi.py
 temp-validation/
 *.tmp
 *.log
+
+# uv local venv
+.venv/
+
+.venv-live/
+
+# CTP API flow artifacts (written to cwd on API init/crash)
+*.con
+
+# live service outputs + python caches
+bars/
+__pycache__/
+*.pyc
