@@ -1,6 +1,7 @@
 \documentclass[11pt,a4paper]{article}
 \usepackage[margin=2.4cm]{geometry}
 \usepackage{amsmath,amssymb}
+\usepackage{lmodern}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage[hidelinks]{hyperref}
@@ -15,6 +16,48 @@
 
 \begin{document}
 \maketitle
+
+\noindent\fbox{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule}{%
+\small
+\textbf{Current stage (2026-08-27).}
+\begin{itemize}
+\setlength\itemsep{1pt}
+  \item Live-side chain \emph{built and verified offline} on real past data
+        aligned with place/trade: research tape re-dressed as a TORA capture
+        reproduces the research tick\_table at \textbf{98.4\% cell-exact}
+        (21{,}719 rows), event codes / sign / volumes each \textbf{99.9\%}
+        (\S\ref{sec:results}); the capture$\rightarrow$convert round-trip on
+        the tape itself is bit-faithful (100.0\%).
+  \item Row-generation contract extracted from cn\_rst3 and pinned
+        (\texttt{alignment\_ob/tick\_row\_spec.md}); normalizer, converters,
+        profiler, and the dry-run gate are all committed and tested (53 tests).
+  \item TORA SDK v4.0.8 in hand; C++ capture tool built and linked; both
+        fronts reachable from the working host; first login unanswered
+        (pre-market / fund-account-login DepartmentID); \textbf{live capture
+        scheduled for the 09:15 Beijing market open} (\S\ref{sec:live}).
+\end{itemize}
+\textbf{What to do next (in order).}
+\begin{enumerate}
+\setlength\itemsep{1pt}
+  \item Run the live capture at Beijing open; grade it with the exact dry-run
+        machinery of \S\ref{sec:method}; resolve login
+        (UserID vs fund account + DepartmentID).
+  \item Port the book reconstruction from cn\_rst3 driven by the TORA
+        order-by-order primitives; validate against the vendor 10-level
+        snapshots as \emph{reference} (\S\ref{sec:strategy}). Closes
+        \texttt{level\_placed} beyond the visible 10 levels and the
+        book-stamp-timing deltas.
+  \item Implement the per-order row-mutation port (continuous fills mutate
+        and re-emit the aggressor's Add row) --- closes the remaining 7{,}749
+        tape rows (\S\ref{sec:port}).
+  \item Offline acceptance for (2)+(3): place/trade $\rightarrow$ port
+        $\rightarrow$ tick\_table at \textbf{100.0\%}.
+  \item Then: M3 same-date profile $\rightarrow$ M4 live cqr\_bar
+        $\rightarrow$ M5 execution.
+\end{enumerate}
+}}
+
+\vspace{1em}
 
 \begin{abstract}
 We are connecting the obgx research stack (place/trade $\rightarrow$ book
