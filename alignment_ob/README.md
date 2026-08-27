@@ -74,7 +74,7 @@ M1 mapping until 100.0% → then bars via `scripts/gate_stream_vs_batch.py`.
 | 6 | Headers read (GBK→UTF-8): `CTORATstpLev2MdApi` (Create/Init/RegisterFront/SubscribeMarketData/Transaction/OrderDetail/Resend*), SPI callbacks, all three field structs, types/enums (`'B'/'S'` aggressor, `'A'/'D'` add/delete, `'1'/'2'` SSE/SZSE, int HHMMSSmmm timestamps, yuan prices, login `LogInAccountType '0'/'1'` + `DepartmentID` 必填 for 资金账号) | M1 mapping grounded on the official headers, not guesses |
 | 7 | **`cpp/lev2_dump.cpp` built and linked** against `liblev2mdapi.so` (g++ on this box) — M0 raw capture tool, JSONL per callback, all book fields via named accessors | Builds clean; `GetApiVersion()` works offline; **the fronts CONNECT from this GCP box** (`tcp://210.14.72.16:9402` 7x24 and `tcp://210.14.72.21:4402` 仿真 both fire `OnFrontConnected`) |
 | 8 | First live attempts (acct_type 0/1, both fronts, 06:15 Beijing): front connects, subscribes, **no login response / no data** — pre-market or login-rejection (DepartmentID missing for 资金账号 login) | Scheduled capture at 09:15 Beijing to distinguish |
-| 9 | `normalize.py` — M1 normalizer: md→book state, tr→event 1/4/2 (stat/ExecType), od→event 0/2, resend dedupe in the same seq space, book stamped on every event, `level_placed` derived, SZ sign from mid | 11 tests green |
+| 9 | `normalize.py` — M1 normalizer v1: md→book state, od→events, resend dedupe in the same seq space, book stamped on every event | 11 tests green (superseded by the Rust-semantics rewrite, #11) |
 
 ## Live capture (works from this box — the fronts are reachable)
 
@@ -97,3 +97,21 @@ PYEOF
 
 # M3: profile against the research tape (same date), then bars via the gate
 ```
+
+## 2026-08-27 late night — Rust row semantics extracted, dry run at 98.4%
+
+| # | What | Result |
+|---|------|--------|
+| 10 | Read the row-generation source of truth (user pointer: obgx rust code): `tick_row.rs` + `engine/tick.rs` | **The mapping corrections**: event 1 = Add (4 in auction), event 2 = Cancel with vol_placed = **−(qty)**, local_ts = exch_ts + 100ms (fixed), order_seq = per-symbol row counter, level_placed = distinct-price-level count (0 at best, −1 crossed, −2 auction fills), auction fill rows (vol_placed=0, vol_traded=qty, tvr=price×qty/100). **Trades do not emit rows — they mutate the aggressor's Add row and re-emit it** (sweep-confirm). Full spec: `tick_row_spec.md` |
+| 11 | Normalizer rewritten to the Rust semantics (auction windows pinned empirically: adds 09:15–09:25 / 14:57–15:00, fills = the single 09:25:00.980 / 15:00:00.000 print instants); synth capture re-dressed from research place/trade + tick_table | **Dry run on real 20220104 data: 98.4% cell-exact on 21,719 comparable rows; event codes 99.9%, sign 99.9%, volumes 99.9%.** Residuals fully attributed: level_placed beyond the visible 10 levels (5,373), book-stamp timing at fan-out instants (~1,100), continuous trades (mutation-only, 7,749 rows not statelessly representable) |
+| 12 | `tests/test_synth_tora.py` pins the dry run (sanity thresholds, not the gate) | 53 tests total green, ruff clean |
+
+## The remaining gap: the per-order row-mutation port
+
+To reproduce the full tick_table (including continuous-trade mutations and
+re-emissions), the live engine needs the Rust book+row machinery ported:
+OrderBook with FIFO slots + cages, per-order row state (vol_traded/tvr/
+count_traded/depth_traded updates on fills), sweep handling. The TORA
+od/tr feed provides exactly the add/cancel/fill primitives it consumes.
+Target: place/trade → port → tick_table at 100.0% (the same gate
+`scripts/gate_stream_vs_batch.py` runs for the Rust engine).

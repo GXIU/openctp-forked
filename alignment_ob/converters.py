@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from live.events import CANCEL_EVENT, TRADE_EVENTS, Event
+from live.events import CANCEL_EVENT, Event
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -134,12 +134,13 @@ def _order_row(ev: Event, opts: ConvertOptions, *, ord_type: int) -> dict:
 
 
 def events_to_place_rows(events: list[Event], opts: ConvertOptions | None = None) -> list[dict]:
-    """Place (逐笔委托) rows: add (event 0, OrdType 0) and cancel (event 2,
-    OrdType -1) — grounded on the real 20220104 place file."""
+    """Place (逐笔委托) rows: add (event 1 continuous / 4 auction, OrdType 0)
+    and cancel (event 2, OrdType -1) — Rust tick_row semantics
+    (tick_row_spec.md); grounded on the real 20220104 place file."""
     opts = opts or ConvertOptions(sid=sid_of(events[0].instrument) if events else 2_600_000)
     rows = []
     for ev in events:
-        if ev.event == 0:
+        if ev.event in (1, 4):
             rows.append(_order_row(ev, opts, ord_type=0))
         elif ev.event == CANCEL_EVENT:
             rows.append(_order_row(ev, opts, ord_type=-1))
@@ -147,13 +148,14 @@ def events_to_place_rows(events: list[Event], opts: ConvertOptions | None = None
 
 
 def events_to_trade_rows(events: list[Event], opts: ConvertOptions | None = None) -> list[dict]:
-    """Trade (逐笔成交) rows for event 1/4/5. Buyer/seller attribution: the
-    event stream carries one order_id per row — the counterpart side is filled
-    from extra (buy_order_id/sell_order_id) when a source provides it, else 0."""
+    """Trade (逐笔成交) rows for auction fills (event 4). Continuous fills do
+    NOT exist in the event stream (Rust mutates the aggressor's Add row —
+    tick_row_spec.md); the place/trade OUTPUT path should map the raw tr
+    capture lines directly instead."""
     opts = opts or ConvertOptions(sid=sid_of(events[0].instrument) if events else 2_600_000)
     rows = []
     for ev in events:
-        if ev.event not in TRADE_EVENTS:
+        if ev.event != 4:
             continue
         rows.append(
             {

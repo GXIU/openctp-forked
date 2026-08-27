@@ -146,3 +146,49 @@ This is the design doc's own pre-flagged "fidelity risk" realized: the streaming
 - Bugs the tests caught: resend keys must share the live seq space; unknown line types must not touch SecurityID; HHMMSSmmm left-padding for pre-10:00 hours.
 
 ### Suite: 50 passed, ruff clean. Committed (not pushed).
+
+## 2026-08-27 (23:30) — Rust row semantics extracted; past-data dry run at 98.4%
+
+### User pointers that mattered
+
+"go to rust code to get them aligned how the tick row are generated" +
+"mind the format alignments" — read `obgx/obg/t2b/cn_rst3/src/tick_row.rs`
++ `engine/tick.rs` (the row semantics + emission helpers). The corrections
+vs the naive mapping were substantial:
+
+1. event 1 = **Add** (4 when in auction); event 2 = Cancel with
+   **vol_placed = -(qty)**; event 4 = auction adds AND auction fills
+   (vol_placed=0, vol_traded=qty, level_placed=-2, order_id=0,
+   tvr=price×qty/100); event 5 = market/aggressive-intent rows.
+2. **Continuous trades do NOT emit rows** — they mutate the aggressor's
+   Add row (vol_traded/tvr/count_traded/depth_traded) and re-emit it
+   (the sweep-confirm surface from E4f). A stateless mapper cannot
+   reproduce them; needs the per-order row-mutation port.
+3. **local_ts = exch_ts + 100ms** (fixed offset, confirmed in data);
+   order_seq = per-symbol row counter; level_placed = distinct-price-level
+   count (0 at best, -1 crossed) — NOT a 10-level index.
+4. Auction windows pinned empirically on sh600000/20220104: adds
+   09:15–09:25 / 14:57–15:00; fills = single print instants
+   (09:25:00.980 open = 67 fan-out rows at one price; 15:00:00.000 close).
+5. Formats: tick_table is 100% ms-aligned; the trade FILE is aggregated
+   (one auction match fans out to many tick_table fills) — TORA 逐笔成交
+   is per-fill, i.e. tick_table-granularity.
+
+All of it written down in `alignment_ob/tick_row_spec.md`.
+
+### The past-data dry run (the user's "any past data to test API?")
+
+Research tape re-dressed as a TORA capture (place→od, trade→tr,
+tick_table book→md, TORA wire format via the fixed HHMMSSmmm packer —
+a sec×10² carry bug was found and fixed by the round-trip) → normalize →
+convert → profile vs the research tick_table:
+
+**98.4% cell-exact on 21,719 comparable rows** (adds/cancels/auction fills);
+event codes 99.9% exact (25 rows), sign 99.9% (15), vol_placed/vol_traded
+99.9% (135/122). Residuals fully attributed: level_placed beyond the
+visible 10 levels (5,373 rows — the live 10-level feed's structural limit;
+`_lle1` leaves unaffected), book-stamp timing at fan-out instants (~1,100),
+and the 7,749 continuous-trade rows (mutation-only). Pinned by
+`tests/test_synth_tora.py` (sanity thresholds; the profile is the gate).
+
+### Suite: 53 passed, ruff clean. Committed (not pushed).

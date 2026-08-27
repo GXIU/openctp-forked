@@ -81,7 +81,7 @@ def test_capture_dump_roundtrip(tmp_path):
 
 
 def test_place_rows_add_and_cancel():
-    add = _ev(event=0, price=830, vol_placed=100, sign=1, extra={"order_id": 54})
+    add = _ev(event=1, price=830, vol_placed=100, sign=1, extra={"order_id": 54})
     cancel = _ev(event=2, price=830, vol_placed=100, sign=-1, extra={"order_id": 54})
     rows = events_to_place_rows([add, cancel])
     assert len(rows) == 2
@@ -95,9 +95,9 @@ def test_place_rows_add_and_cancel():
     assert rows[1]["OrderID"] == 54
 
 
-def test_trade_rows_only_trade_events():
+def test_trade_rows_only_auction_fills():
     trade = _ev(event=4, price=854, vol_traded=100, sign=1)
-    rows = events_to_trade_rows([trade, _ev(event=0), _ev(event=2)])
+    rows = events_to_trade_rows([trade, _ev(event=1), _ev(event=2)])
     assert len(rows) == 1
     assert rows[0]["Price"] == 8.54 and rows[0]["Qty"] == 100.0
     assert rows[0]["TradeTime"] == 1641225600000000000 + 34200000000000
