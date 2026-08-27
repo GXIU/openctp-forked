@@ -110,3 +110,23 @@ This is the design doc's own pre-flagged "fidelity risk" realized: the streaming
 - `docs/tora_onramp.md`: what to ask 华鑫奇点 for (n-sight account, L2 module form factor, 行情 tier, recording permission, same-date historical 逐笔 dump, trading account), the L2 → place/trade + tick_table conversion plan (two cross-checking paths), gate-style alignment profiling vs the research tape, milestones M0 capture → M5 trade, and why cqr_bar on live TORA is off the table until M3 (SDK blocked + field fidelity unprofiled).
 - CLAUDE.md open-items rewritten around the on-ramp; decisions log unchanged (made decisions still hold).
 - Full working tree committed to master (not pushed) — live service, scripts, tests, docs, configs, venv pins; `bars/` outputs + pycache gitignored.
+
+## 2026-08-27 (night) — alignment_ob/ iteration workspace, TORA credentials in hand
+
+### What was built
+
+- `alignment_ob/` package (user direction: "create a folder alignment_ob/ to iterate on this", n-sight account 00974579 provided):
+  - `converters.py` — M2: events → tick_table (canonical 83-col schema: int64 + the one float col `vwap_better` — found by the round-trip test catching 8,128 fractional mismatches); events → place/trade (yuan prices, ns-epoch OrderTime/TradeTime, OrdType 0 add / -1 cancel cross-validated: the -1 count 5,894 == tick_table event-2 cancel count exactly).
+  - `profiler.py` — M3: tape-level comparator (NaN==None exact, missing rows/columns on either side, per-column delta attribution) — the gate idea one level below bars.
+  - `capture.py` — M0/M1: `replay_capture` (offline loop on real data) + `ToraCapture` scaffold (SDK-conditional, struct names from tora-rs pre-mapped).
+  - `README.md` iteration log + SDK acquisition steps; `secrets.example.yaml` template; real `secrets.yaml` (600, gitignored).
+- `tests/test_alignment.py` — 6 tests: **bit-faithful tick_table round-trip (30,598 × 83 = 100.0%)**, capture dump, place/trade converter unit tests, profiler self-compare + mutation detection.
+
+### SDK status
+
+- n-sight.com.cn reachable from this GCP box (HTTP 200, JSESSIONID) but the login is an element-ui SPA with no curl-friendly endpoint (RSA/captcha risk with real creds → did not brute-force). **Manual browser download needed** (README steps; SDK pins from the openctp TORA readme: API_C++_行情_v1.0.8_20241220 + API_C++_交易_v4.1.3_20250415; check the 行情 package for the lev2 L2 module).
+- Fronts remain China-reachable only — capture must run on a China host.
+
+### Numbers
+
+- Full suite with alignment_ob: 39 tests (33 + 6), all green; ruff clean.

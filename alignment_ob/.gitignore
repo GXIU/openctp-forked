@@ -1,0 +1,5 @@
+# local secrets / vendor SDK / raw captures — never committed
+secrets.yaml
+sdk/
+captures/
+*.pkl

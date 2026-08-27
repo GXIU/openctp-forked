@@ -62,6 +62,8 @@ cd /home/george/code/obgx
 # once it lands.
 ```
 
+**TORA live iteration (`alignment_ob/`)** — the M0→M5 on-ramp workspace (plan: `docs/tora_onramp.md`, log: `alignment_ob/README.md`). Offline-verified: the research tick_table **round-trips bit-faithfully** through capture → events → `alignment_ob.converters.events_to_tick_table` (30,598 rows × 83 cols, 100.0% exact — the property the live capture must reproduce); place/trade converters grounded on the real obgx parquet (OrdType 0 add / -1 cancel, yuan, ns-epoch); `alignment_ob.profiler.compare_tapes` = the M3 tape-level comparator. Blocked pieces: TORA SDK (n-sight browser download, steps in the README — account 00974579, SDK pins `API_C++_行情_v1.0.8_20241220` + `API_C++_交易_v4.1.3_20250415`, secrets in gitignored `alignment_ob/secrets.yaml`) and a China-reachable host for the fronts.
+
 **Rust live-stream path (verified working 2026-08-27):** cn_rst3 itself streams — real data in, continuous Arrow IPC bars out, this repo's consumer reads them live:
 
 ```bash
