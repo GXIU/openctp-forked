@@ -1,0 +1,253 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+
+\title{\bf Aligning the TORA L2 Live Feed with the Research Tick Tape\\
+\large Tick-level reconstruction, level/book validation strategy, and the
+98.4\% dry-run gate}
+\author{obgx $\leftrightarrow$ openctp-forked live-service iteration\\
+2026-08-27}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We are connecting the obgx research stack (place/trade $\rightarrow$ book
+reconstruction $\rightarrow$ \texttt{tick\_table} $\rightarrow$ cqr bar
+graphs $\rightarrow$ cc models) to a live Chinese-equity feed --- the TORA
+(HuaXin Qidian) native L2 API, which delivers order-by-order order and trade
+streams plus a 10-level book snapshot stream. The central question is the
+alignment between \emph{our data} (the reconstructed research tick tape) and
+\emph{their live data} (the vendor L2 streams). We extracted the exact
+row-generation contract from the Rust engine (cn\_rst3), re-dressed the
+research tape as a TORA-shaped capture, and measured the live pipeline's
+fidelity on real 20220104 data: \textbf{98.4\% cell-exact} across the
+statelessly-representable rows (21{,}719 rows), with event codes, signs and
+volumes each \textbf{99.9\%} exact. The residual deltas are precisely
+attributed, and the strategy to close them --- reconstruct the book from the
+vendor's own order-by-order updates and use the vendor's level snapshots only
+as a \emph{reference} for the reconstruction --- is specified here together
+with the remaining per-order row-mutation port.
+\end{abstract}
+
+\section{The two data worlds}
+
+Research-side (our data):
+\begin{itemize}
+  \item \textbf{place/ + trade/} raw parquet (the exchange feed in broker
+        format: order adds/cancels, trades), consumed by cn\_rst3;
+  \item \textbf{book reconstruction} --- the Rust engine maintains a full
+        limit-order book with FIFO slots from place/trade and emits the
+        \textbf{tick\_table}: 83 columns (24 core + 60 book), one row per
+        executable event, prices in integer cents, timestamps in ns past
+        midnight;
+  \item tick\_table feeds the cqr bar graphs (per 3m window) and onward to
+        the cc models. Bar fidelity to this tape is pinned bit-faithfully.
+\end{itemize}
+
+Live-side (their data): the TORA L2 API (\texttt{TORALEV2API} v4.0.8)
+delivers three streams per instrument:
+\begin{itemize}
+  \item \textbf{md} --- 10-level book snapshot (\texttt{Lev2MarketDataField}):
+        prices (yuan), quantities, per-level order counts, session state
+        (auction/continuous), cumulative volume;
+  \item \textbf{od} --- order-by-order order stream
+        (\texttt{Lev2OrderDetailField}): add/delete of resting orders with
+        order number, price, quantity, side, order status;
+  \item \textbf{tr} --- order-by-order trade stream
+        (\texttt{Lev2TransactionField}): price, quantity, buy/sell order
+        numbers, aggressor flag (BSFlag), sequence numbers; resend variants
+        exist for gap recovery.
+\end{itemize}
+
+\section{Format alignments that matter}
+\label{sec:formats}
+
+Extracted from the Rust sources (\texttt{tick\_row.rs},
+\texttt{engine/tick.rs}) and confirmed against the 20220104 tape --- these
+are the format-level contracts the live path must reproduce:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Property & Contract \\
+\midrule
+Prices & integer cents in tick\_table; double yuan on the wire ($\times 100$) \\
+Volumes & shares, verbatim \\
+Timestamps & TORA wire is packed \texttt{HHMMSSmmm}; the tape is 100\% ms-aligned \\
+\texttt{local\_ts} & $=$ \texttt{exch\_ts} $+$ 100\,ms (fixed offset) \\
+\texttt{order\_seq} & per-symbol row counter (\texttt{row\_index + 1}) \\
+Trade file & \emph{aggregated}: one auction print fans out to many tape rows \\
+TORA \texttt{tr} & per-fill --- exactly tape granularity \\
+\texttt{vwap\_better} & the single float column (all others int64) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Row-generation contract}
+\label{sec:contract}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+Code & Meaning & \texttt{vol\_placed} & \texttt{vol\_traded} \\
+\midrule
+1 & Add (limit order to book) & $+q$ & 0 \\
+2 & Cancel & $-q$ & 0 \\
+4 & Auction add / auction fill & $+q$ / $0$ & $0$ / $q$ \\
+5 & Market / aggressive-intent row & $+q$ & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Two structural facts drive the live design:
+\begin{enumerate}
+  \item \textbf{Trades do not emit rows.} A continuous fill \emph{mutates}
+        the aggressor's existing Add row (\texttt{vol\_traded}, \texttt{tvr},
+        \texttt{count\_traded}, \texttt{depth\_traded}) and the updated row is
+        \emph{re-emitted} (sweep-confirm re-emission). A stateless mapper
+        cannot reproduce this; it requires the per-order row-mutation port.
+  \item \textbf{\texttt{level\_placed}} is the number of distinct price
+        levels between the best price and the order's price (0 at best,
+        $-1$ crossed, $-2$ auction fills) computed on the \emph{full} book
+        --- values $\geq 10$ appear in the tape. A 10-level feed alone can
+        only compute it while the order price is within the visible levels
+        (the cqr graph's \texttt{\_lle1} variants need only the top two
+        levels and remain exact).
+\end{enumerate}
+
+Book snapshots on a row are \emph{pre-event} (the book as it stood before the
+row's own event). Auction windows (empirical, sh600000/20220104): adds
+09:15--09:25 and 14:57--15:00; the auction fill print is a single instant
+(09:25:00.980 open --- 67 fan-out rows at one price; 15:00:00.000 close).
+
+\section{Methodology: the re-dress dry run}
+\label{sec:method}
+
+Because the TORA wire and the research tape describe the same underlying
+market, the live pipeline can be validated \emph{offline} on past data
+aligned with place/trade:
+
+\begin{enumerate}
+  \item \textbf{Re-dress}: research place $\rightarrow$ TORA \texttt{od}
+        lines; trade $\rightarrow$ \texttt{tr} lines; tick\_table book
+        columns $\rightarrow$ \texttt{md} lines --- all in the exact wire
+        format of the C++ capture tool (\texttt{lev2\_dump.cpp}).
+  \item \textbf{Normalize} (\texttt{normalize.py}): merge the three streams
+        in time order, maintain the last 10-level book, stamp every event
+        pre-event, dedupe resends in the live sequence space, map codes
+        per \S\ref{sec:contract}.
+  \item \textbf{Convert} (\texttt{converters.py}): events $\rightarrow$ the
+        canonical 83-column tick\_table schema.
+  \item \textbf{Profile} (\texttt{profiler.py}): cellwise comparison against
+        the research tick\_table keyed on
+        (\texttt{exch\_ts}\,ms, price, qty), with per-column mismatch
+        attribution, NaN-exact semantics, and missing-row/column reporting.
+\end{enumerate}
+
+The loop is pinned by \texttt{tests/test\_synth\_tora.py}; the identical
+chain grades any real capture from the live front.
+
+\section{Results}
+\label{sec:results}
+
+Baseline: the capture$\rightarrow$event$\rightarrow$convert round-trip on the
+research tape itself is \textbf{bit-faithful} --- sh600000/20220104,
+30{,}598 rows $\times$ 83 columns, \textbf{100.0\%} exact
+(\texttt{tests/test\_alignment.py}).
+
+Dry run (real 20220104, adds/cancels/auction fills --- the statelessly
+representable 73\% of the tape):
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+Rows compared & 21{,}719 \\
+Overall cell-exact & \textbf{98.4\%} \\
+Event-code mismatches & 25 \quad (99.9\%) \\
+Sign mismatches & 15 \quad (99.9\%) \\
+\texttt{vol\_placed}/\texttt{vol\_traded} mismatches & 135 / 122 \quad (99.9\%) \\
+\texttt{level\_placed} mismatches & 5{,}373 \\
+Book qty/order-count mismatches & $\sim$1{,}100 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Residual attribution:
+\begin{itemize}
+  \item \textbf{\texttt{level\_placed} beyond the visible 10 levels}
+        (5{,}373 rows): a structural limit of any 10-level feed; closed by
+        the reconstruction strategy of \S\ref{sec:strategy}.
+  \item \textbf{Book-stamp timing at fan-out instants} ($\sim$1{,}100):
+        at multi-fill instants the pre-event book differs by the fill
+        sequence; closed by reconstructing the book from the tick stream
+        itself rather than from snapshots.
+  \item \textbf{Continuous trades} (7{,}749 rows): mutation-only rows;
+        require the per-order row-mutation port (\S\ref{sec:port}).
+\end{itemize}
+
+\section{Level and book strategy: reconstruct from ticks, use their levels
+as reference}
+\label{sec:strategy}
+
+The vendor sends both the order-by-order event stream \emph{and} its own
+book snapshots. The proposed strategy is to invert their roles relative to
+a snapshot-trusting design:
+
+\begin{enumerate}
+  \item \textbf{Primary book = our reconstruction from their ticks.} Port
+        the cn\_rst3 book machinery (limit-order book with FIFO slots, cages,
+        sweeps) driven by the TORA \texttt{od}/\texttt{tr} primitives --- the
+        same add/cancel/fill events the research reconstruction consumes.
+        This yields the full-depth book, exact \texttt{level\_placed}, exact
+        pre-event stamping, and the mutation/re-emission semantics
+        (\S\ref{sec:port}) --- i.e., the whole 83-column tape.
+  \item \textbf{Vendor levels = reference, not source.} Their 10-level
+        snapshots validate the reconstruction: per-level cross-checks at
+        snapshot instants, divergence alerts, and drift statistics. The
+        vendor book is never used as the primary book state.
+  \item \textbf{Why this order.} (a) The research pipeline itself
+        reconstructs --- parity requires reconstructing; (b) the vendor
+        snapshot timing relative to their own events is unknown until M0
+        captures (the dry run's book-stamp deltas are exactly this
+        uncertainty); (c) beyond-10 information only exists in the
+        reconstruction.
+\end{enumerate}
+
+\section{The remaining port}
+\label{sec:port}
+
+The per-order row-mutation port is the one substantive implementation left:
+an OrderBook with FIFO slots and cages, per-order row state mutated by fills,
+sweep handling (SZ), and re-emission --- verified offline against
+place/trade $\rightarrow$ tick\_table at 100.0\% (the same gate
+\texttt{scripts/gate\_stream\_vs\_batch.py} applies to the Rust engine).
+The TORA feed supplies exactly the primitives the port consumes, so the live
+engine then reproduces the full research semantics on a live feed.
+
+\section{Live capture status}
+\label{sec:live}
+
+The official SDK (\texttt{API\_Stock\_lv2\_C++ v4.0.8}) is in hand; the C++
+capture tool is built and linked; both fronts (7$\times$24 and simulation)
+are reachable from the working host. First login at 06:15 Beijing returned
+no response (pre-market and/or the account-login DepartmentID requirement);
+a capture is scheduled for the 09:15 Beijing market open. Every capture is
+graded by the exact machinery of \S\ref{sec:method}.
+
+\section{Conclusion}
+
+The alignment between our research tape and the TORA live feed is now a
+measured, attributed quantity rather than an assumption: 98.4\% cell-exact
+with 99.9\% on the semantic core, and a precise closing plan --- tick-driven
+book reconstruction validated against vendor levels, plus the per-order
+mutation port --- that targets full parity on the live feed.
+
+\end{document}
