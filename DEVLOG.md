@@ -210,17 +210,27 @@ Trajectory (same gate, sh600000/20220104, 29,411 comparable rows):
   99.57% (stamp timing: adds/cancels PRE-event, fills POST-event;
   open-auction fan-out progressive both-side consumption, close shared
   book) → 99.6005% (last_price rule: preclose seed + every trade
-  updates the book) → **99.8877%** (event-5/mutation taxonomy).
+  updates the book) → 99.8877% (event-5/mutation taxonomy) →
+  **100.0000% cell-exact** (close-auction algorithmic match + open
+  quiet-phase drain + rank pairing + time-driven auction membership).
 
-The event-5 taxonomy (the last big port): aggressive adds stamp
-level_placed −2; fills MERGE into the registered aggressor's Add row
-(qty stays original, price = first fill, book re-snapshot per print —
-the tick_table shows the row once, zero order-id repeats); trade-only
-rows for unregistered aggressors (multi-price sweep → event 5);
-cancel-after-sweep upgrades filled lvl=−2 adds / trade-only rows to
-event 5 (all 71 rows on the tape). Remaining residuals: `*_qty_0` /
-`*_orders_0` (250/184/148/144, key-collision + FIFO-fallback drift),
-event 28, sign 18, level_placed 21, last_price 3.
+The event-5 taxonomy: aggressive adds stamp level_placed −2; fills
+MERGE into the registered aggressor's Add row (qty stays original,
+price = first fill, book re-snapshot per print — the tick_table shows
+the row once, zero order-id repeats); trade-only rows for unregistered
+aggressors (multi-price sweep → event 5); cancel-after-sweep upgrades
+filled lvl=−2 adds / trade-only rows to event 5 (all 71 rows on the
+tape). The final levers: SH close-auction prints are ignored by
+cn_rst3 (is_close && is_sh) — the rows come from the algorithmic
+book match (auction_match_with_price + execute_auction +
+cancel_beyond_price, stamped 15:00:00.000); the open-auction quiet
+phase drains NAMED orders per print then silently cancels beyond the
+clearing price; auction membership is time-driven, not stat-driven;
+the gate pairs fan-out key groups by in-group rank (order_seq).
+
+**Final gate: 30,598/30,598 rows compared (missing 0/0), 2,050,066
+cells, 0 mismatches.** The parity dry run reproduces the research
+tick_table bit-for-bit.
 
 Also landed: the delay monitor (`recv_ns` on every lev2_dump line +
 `mconn/feed/delay.py`, per-stream recv−exch stats, offline-tested) —
