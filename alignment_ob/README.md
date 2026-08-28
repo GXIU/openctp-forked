@@ -31,9 +31,28 @@ required when logging in as 资金账号** (unknown value — try UserID first).
 
 **The fronts are reachable from this GCP box** — `OnFrontConnected` fires on
 both `tcp://210.14.72.16:9402` (7x24) and `tcp://210.14.72.21:4402` (仿真).
-First live run blocked on: pre-market hours (06:15 Beijing) and/or login
-rejection. `alignment_ob/scripts/capture_live.sh` runs the capture; the first
-market-open capture is scheduled for 09:15 Beijing.
+`alignment_ob/scripts/capture_live.sh` runs the capture (grep line-buffered
+— pre-market lines sat in grep's 4KB buffer once, fixed 2026-08-28).
+
+**Login matrix (2026-08-28, DURING market hours 09:15-09:25):** the front
+connects but `ReqUserLogin` is never answered — no `OnRspUserLogin`, no
+`OnRspError` — for every combination tried:
+
+| front | acct_type | result |
+|---|---|---|
+| 9402 (7×24) | 0 UserID / 1 资金账号 / 2 沪A / 3 深A / 9 统一 | connect, login silent |
+| 4402 (仿真) | 0 | connect, login silent |
+
+The login struct is well-formed (verified against the v4.0.8 header:
+`LogInAccountType`/`AuthMode` are chars, '0'=password ✓, `DepartmentID`
+is 必填 only for 资金账号 logins). A silent drop on ALL account types
+points at the account, not the code: the n-sight 00974579 trading account
+likely has **no L2 行情 entitlement on these fronts** (L2 逐笔 typically
+ships under a separate 行情账号 / seat account) or the L2 行情 fronts
+differ from the L1 ones. **What to ask 华鑫奇点:** (1) the 行情账号 (or
+whether 00974579 is entitled to L2) + the L2 行情 front address;
+(2) the 一级机构代码 (DepartmentID) if login must use 资金账号; (3)
+whether 仿真 includes L2 逐笔 or only the production L2 does.
 
 ## Offline loop (works today, no SDK)
 

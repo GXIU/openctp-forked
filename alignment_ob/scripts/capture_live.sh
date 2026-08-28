@@ -7,7 +7,7 @@
 # Requires: lev2_dump built (see cpp/lev2_dump.cpp), alignment_ob/secrets.yaml.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SECS="${1:-7200}"
 FRONT="${2:-tcp://210.14.72.16:9402}"
 ACCT="${3:-0}"
@@ -29,5 +29,5 @@ TAG=$(echo "$FRONT" | tr -d ':/')
 echo "capture: front=$FRONT acct_type=$ACCT sids=$SIDS seconds=$SECS date=$DATE" >&2
 timeout "$SECS" "$REPO/alignment_ob/sdk/bin/lev2_dump" \
   "$FRONT" "$USER" "$PW" "$ACCT" "$SIDS" "$RESEND" 2>/dev/null \
-  | grep '^{' > "$OUT/capture_${TAG}.jsonl" || true
+  | grep --line-buffered '^{' > "$OUT/capture_${TAG}.jsonl" || true
 echo "captured $(wc -l < "$OUT/capture_${TAG}.jsonl") lines → $OUT/capture_${TAG}.jsonl" >&2

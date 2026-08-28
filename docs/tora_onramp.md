@@ -10,12 +10,20 @@ actually trading.
 
 1. **n-sight account** (n-sight.com.cn) — gates the SDK download and API
    authorization (user/password, appid/authcode). 仿真账号 first.
+   *2026-08-28 update:* the account 00974579 connects to both fronts
+   (`OnFrontConnected` fires) but `ReqUserLogin` is NEVER answered on
+   acct types 0/1/2/3/9 × both fronts, during market hours, with a
+   header-verified well-formed login struct. → **ask for the 行情账号**
+   (L2 逐笔 typically ships under a separate market-data account, not the
+   trading account), **the L2 行情 front address** (the 9402/4402 fronts
+   may be L1-only), and the **一级机构代码 (DepartmentID)**.
 2. **SDK form factor** — confirm whether the official SDK ships the **L2 逐笔
    module** (`lev2md`: `Lev2OrderDetail` 逐笔委托, `Lev2Transaction` 逐笔成交
    with BSFlag aggressor sign, 10-level `Lev2MarketData`, resend streams) as a
    Python module or C++ only. C++ only → thin shim or the Rust `tora-rs` crate.
    (`ToraSource` in `live/source.py` is already scaffolded with the confirmed
-   struct mappings; only plumbing is missing.)
+   struct mappings; only plumbing is missing. The C++ capture tool
+   `alignment_ob/cpp/lev2_dump.cpp` is built and working — SDK v4.0.8 C++.)
 3. **L2 行情 tier** — free in A类量化机房, purchased for B类 (自备机器). This
    decides host placement: the capture host must sit China-side anyway.
 4. **Recording permission** — confirm the 行情授权 covers recording to disk for
