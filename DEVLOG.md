@@ -192,3 +192,39 @@ and the 7,749 continuous-trade rows (mutation-only). Pinned by
 `tests/test_synth_tora.py` (sanity thresholds; the profile is the gate).
 
 ### Suite: 53 passed, ruff clean. Committed (not pushed).
+
+## 2026-08-28 — mconn (private) parity normalizer: 99.89% cell-exact full tape, event-5 taxonomy ported
+
+The alignment work moved to the private companion repo GXIU/mconn
+(the fork is public; the dry-run machinery and probes live there —
+`docs/experiments.md` is the full probe log). The stateless normalizer's
+73%-coverage 98.4% dry run has been superseded by the **full-tape parity
+normalizer** (`mconn/feed/parity.py`): full book reconstruction from od/tr
+deltas, FIFO slots keyed by order id, and the complete cn_rst3 emission
+taxonomy ported row-for-row from the Rust sources (continuous.rs /
+engine/tick.rs / time_replay.rs).
+
+Trajectory (same gate, sh600000/20220104, 29,411 comparable rows):
+
+- 98.4% (stateless, 71% of tape) → 99.02% (order-id slot model) →
+  99.57% (stamp timing: adds/cancels PRE-event, fills POST-event;
+  open-auction fan-out progressive both-side consumption, close shared
+  book) → 99.6005% (last_price rule: preclose seed + every trade
+  updates the book) → **99.8877%** (event-5/mutation taxonomy).
+
+The event-5 taxonomy (the last big port): aggressive adds stamp
+level_placed −2; fills MERGE into the registered aggressor's Add row
+(qty stays original, price = first fill, book re-snapshot per print —
+the tick_table shows the row once, zero order-id repeats); trade-only
+rows for unregistered aggressors (multi-price sweep → event 5);
+cancel-after-sweep upgrades filled lvl=−2 adds / trade-only rows to
+event 5 (all 71 rows on the tape). Remaining residuals: `*_qty_0` /
+`*_orders_0` (250/184/148/144, key-collision + FIFO-fallback drift),
+event 28, sign 18, level_placed 21, last_price 3.
+
+Also landed: the delay monitor (`recv_ns` on every lev2_dump line +
+`mconn/feed/delay.py`, per-stream recv−exch stats, offline-tested) —
+M3 grading ready for the first live capture.
+
+24 tests green in mconn (incl. the parity gate at 99.5% threshold and
+the exact event-taxonomy counts). Pushed to GXIU/mconn (private).
