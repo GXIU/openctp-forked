@@ -46,3 +46,9 @@ temp-validation/
 bars/
 __pycache__/
 *.pyc
+
+# LaTeX build artifacts
+*.aux
+*.out
+*.toc
+*.synctex.gz
